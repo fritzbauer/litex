@@ -759,15 +759,19 @@ printf("sdcardboot_from_json\n");
 
    }
 */
-static void sdcardboot_from_json(const char * filename)
+static void ((noinline)) sdcardboot_from_json(const char * filename)
 {
 	#if SRAM_SIZE < 4096
-        FATFS *fs = (fs*)(MAIN_RAM_BASE); //malloc(sizeof(FATFS));
-        FIL *file = (FIL*)(MAIN_RAM_BASE + sizeof(FATFS));
-        jsmn_parser *p = (jsmn_parser*)(sizeof(FATFS) + sizeof(FIL));
+        FATFS *fs = (FATFS*)(MAIN_RAM_BASE); //malloc(sizeof(FATFS));
+        FIL *file = (FIL*)(fs + sizeof(FATFS));
+        char *json_name = (char*)(file + sizeof(FIL) );
+        char *json_value = (char*)(json_name + 32 * sizeof(char));
+        jsmn_parser *p = (jsmn_parser*)(json_value  + 32 * sizeof(char));
+        jsmntok_t *t = (jsmntok_t*)(p  + 32 * sizeof(jsmn_parser));
         /* FIXME: modify/increase if too limiting */
-        char *json_buffer = (char*)(MAIN_RAM_BASE + sizeof(FATFS) + sizeof(FIL) + sizeof(jsmn_parser)); //malloc(1024 * sizeof(char));
-        printf("Pointers:\n\t%p\n\t%p\n\t%p\n\t%p", fs, file, p, json_buffer);
+        char *json_buffer = (char*)(t  + 32 * sizeof(jsmntok_t));
+        printf("Pointers:\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n", fs, file, json_name, json_value, p, t, json_buffer);
+        //return;
     #else
         FATFS fs_o;
         FIL file_o;
@@ -780,20 +784,19 @@ static void sdcardboot_from_json(const char * filename)
 
         /* FIXME: modify/increase if too limiting */
         char json_buffer[1024];
+        char json_name[32];
+        char json_value[32];
+        jsmntok_t t[32];
 
     #endif
 
+    usleep(300e3);
     FRESULT fr;
-
-	char json_name[32];
-	char json_value[32];
-
 
 	uint8_t i;
 	uint8_t count;
 	uint32_t length;
 	uint32_t result;
-
 
 	unsigned long boot_r1 = 0;
 	unsigned long boot_r2 = 0;
@@ -825,7 +828,6 @@ static void sdcardboot_from_json(const char * filename)
 	f_mount(0, "", 0);
 
 	/* Parse JSON file */
-	jsmntok_t t[32];
 	//jsmn_parser p;
 	jsmn_init(p);
 	count = jsmn_parse(p, json_buffer, strlen(json_buffer), t, sizeof(t)/sizeof(*t));

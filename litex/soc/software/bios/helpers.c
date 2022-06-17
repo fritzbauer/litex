@@ -135,3 +135,20 @@ void init_dispatcher(void)
 		(*fp)();
 	}
 }
+
+void usleep(int useconds)
+{
+
+	int i = 0;
+	while(i < useconds)
+	{
+		int j = 0;
+		while(j < CYCLES_PER_MS)
+		{
+			asm("");
+			j++;
+		}
+		i++;
+	}
+	return;
+}
