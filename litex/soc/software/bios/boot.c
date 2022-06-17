@@ -710,53 +710,125 @@ static int copy_file_from_sdcard_to_ram(const char * filename, unsigned long ram
 
 	return 1;
 }
+/*
 
+
+static void sdcardboot_from_json(const char * filename) {
+printf("sdcardboot_from_json\n");
+
+    uint32_t result;
+
+
+	result = copy_file_from_sdcard_to_ram("Image", 0x40000000);
+    if (result == 0) {
+        printf("Failed Image.\n");
+        return;
+    }
+
+    printf("Copied Image.\n");
+
+    result = copy_file_from_sdcard_to_ram("rv32.dtb", 0x40ef0000);
+    if (result == 0) {
+        printf("Failed rv32.dtb.\n");
+        return;
+    }
+
+    printf("Copied rv32.dtb.\n");
+
+ 	result = copy_file_from_sdcard_to_ram("rootfs.cpio", 0x41000000);
+    if (result == 0) {
+        printf("Failed rootfs.cpio.\n");
+        return;
+    }
+
+    printf("Copied rootfs.cpio.\n");
+
+    result = copy_file_from_sdcard_to_ram("opensbi.bin", 0x40f00000);
+    if (result == 0) {
+        printf("Failed opensbi.bin.\n");
+        return;
+    }
+
+    printf("Copied opensbi.bin.\n");
+
+    printf("Copied all files. Looping...\n");
+    busy_wait(3600);
+
+    boot(0, 0, 0, 0x40f00000);
+    return;
+
+   }
+*/
 static void sdcardboot_from_json(const char * filename)
 {
-	FRESULT fr;
-	FATFS fs;
-	FIL file;
+	#if SRAM_SIZE < 4096
+        FATFS *fs = (fs*)(MAIN_RAM_BASE); //malloc(sizeof(FATFS));
+        FIL *file = (FIL*)(MAIN_RAM_BASE + sizeof(FATFS));
+        jsmn_parser *p = (jsmn_parser*)(sizeof(FATFS) + sizeof(FIL));
+        /* FIXME: modify/increase if too limiting */
+        char *json_buffer = (char*)(MAIN_RAM_BASE + sizeof(FATFS) + sizeof(FIL) + sizeof(jsmn_parser)); //malloc(1024 * sizeof(char));
+        printf("Pointers:\n\t%p\n\t%p\n\t%p\n\t%p", fs, file, p, json_buffer);
+    #else
+        FATFS fs_o;
+        FIL file_o;
+        jsmn_parser p_o;
+
+        FRESULT *fr = &fr_o;
+        FATFS *fs = &fs_o;
+        FIL *file = &file_o;
+        jsmn_parser *p = &p_o;
+
+        /* FIXME: modify/increase if too limiting */
+        char json_buffer[1024];
+
+    #endif
+
+    FRESULT fr;
+
+	char json_name[32];
+	char json_value[32];
+
 
 	uint8_t i;
 	uint8_t count;
 	uint32_t length;
 	uint32_t result;
 
-	/* FIXME: modify/increase if too limiting */
-	char json_buffer[1024];
-	char json_name[32];
-	char json_value[32];
 
 	unsigned long boot_r1 = 0;
 	unsigned long boot_r2 = 0;
 	unsigned long boot_r3 = 0;
 	unsigned long boot_addr = 0;
 
+    /* FIXME: modify/increase if too limiting */
+	BootFile bootfiles[5];
+	uint8_t bootfile_count = 0;
+
 	uint8_t image_found = 0;
 	uint8_t boot_addr_found = 0;
 
 	/* Read JSON file */
-	fr = f_mount(&fs, "", 1);
+	fr = f_mount(fs, "", 1);
 	if (fr != FR_OK)
 		return;
-	fr = f_open(&file, filename, FA_READ);
+	fr = f_open(file, filename, FA_READ);
 	if (fr != FR_OK) {
 		printf("%s file not found.\n", filename);
 		f_mount(0, "", 0);
 		return;
 	}
 
-	fr = f_read(&file, json_buffer, sizeof(json_buffer), (UINT *) &length);
+	fr = f_read(file, json_buffer, 1024, (UINT *) &length);
 
 	/* Close JSON file */
-	f_close(&file);
+	f_close(file);
 	f_mount(0, "", 0);
 
 	/* Parse JSON file */
 	jsmntok_t t[32];
-	jsmn_parser p;
-	jsmn_init(&p);
-	count = jsmn_parse(&p, json_buffer, strlen(json_buffer), t, sizeof(t)/sizeof(*t));
+	//jsmn_parser p;
+	jsmn_init(p);
+	count = jsmn_parse(p, json_buffer, strlen(json_buffer), t, sizeof(t)/sizeof(*t));
 	for (i=0; i<count-1; i++) {
 		memset(json_name,   0, sizeof(json_name));
 		memset(json_value,  0, sizeof(json_value));
@@ -789,14 +861,28 @@ static void sdcardboot_from_json(const char * filename)
 				boot_r3 = strtoul(json_value, NULL, 0);
 			/* Copy Image from SDCard to address */
 			} else {
-				result = copy_file_from_sdcard_to_ram(json_name, strtoul(json_value, NULL, 0));
-				if (result == 0)
-					return;
+				strncpy(json_name, bootfiles[bootfile_count].file_name, 32);
+				bootfiles[bootfile_count].address = strtoul(json_value, NULL, 0);
+				bootfile_count++;
+
 				image_found = 1;
 				if (boot_addr_found == 0) /* Boot to last Image address if no bootargs.addr specified */
 					boot_addr = strtoul(json_value, NULL, 0);
 			}
 		}
+	}
+
+	#if SRAM_SIZE < 4096
+	/*    free(fr);
+	    free(fs);
+	    free(file);
+	    free(json_buffer);*/
+	#endif
+
+	for(uint8_t i = 0; i < bootfile_count; i++) {
+	    result = copy_file_from_sdcard_to_ram(bootfiles[bootfile_count].file_name, bootfiles[bootfile_count].address);
+        if (result == 0)
+            return;
 	}
 
 	/* Boot */

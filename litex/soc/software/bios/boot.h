@@ -1,6 +1,11 @@
 #ifndef __BOOT_H
 #define __BOOT_H
 
+typedef struct BootFile {
+    char file_name[32];
+    unsigned long address;
+} BootFile;
+
 void set_local_ip(const char * ip_address);
 void set_remote_ip(const char * ip_address);
 void set_mac_addr(const char * mac_address);

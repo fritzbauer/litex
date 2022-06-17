@@ -62,7 +62,7 @@ static void boot_sequence(void)
 	romboot();
 #endif
 #if defined(CSR_SPISDCARD_BASE) || defined(CSR_SDCORE_BASE)
-	sdcardboot();
+	//sdcardboot();
 #endif
 #if defined(CSR_SATA_SECTOR2MEM_BASE)
 	sataboot();

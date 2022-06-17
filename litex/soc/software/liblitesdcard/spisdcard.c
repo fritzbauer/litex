@@ -91,12 +91,16 @@ static int spisdcard_select(void) {
 
     /* Wait 500ms for the card to be ready */
     timeout = 500;
+    uint8_t last_result;
     while(timeout > 0) {
-        if (spi_xfer(0xff) == 0xff)
+        last_result = spi_xfer(0xff);
+        if (last_result == 0xff)
             return 1;
         busy_wait(1);
         timeout--;
     }
+
+    printf("spisdcard_select failed. Last response was: %d\n", last_result);
 
     /* Deselect card on error */
     spisdcard_deselect();
@@ -219,7 +223,7 @@ uint8_t spisdcard_init(void) {
     /* Set SPI clk freq to initialization frequency */
     spi_set_clk_freq(SPISDCARD_CLK_FREQ_INIT);
 
-    timeout = 1000;
+    timeout = 50;
     while (timeout) {
         /* Set SDCard in SPI Mode (generate 80 dummy clocks) */
         spisdcard_cs_write(SPI_CS_HIGH);
@@ -242,7 +246,7 @@ uint8_t spisdcard_init(void) {
     spisdcardread_bytes(buf, 4); /* Get additional bytes of R7 response */
 
     /* Set SDCard in Operational state (1s timeout) */
-    timeout = 1000;
+    timeout = 50;
     while (timeout > 0) {
         if (spisdcardsend_cmd(ACMD41, 1 << 30) == 0)
             break;
