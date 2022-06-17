@@ -3,6 +3,10 @@ ENTRY(_start)
 
 INCLUDE generated/regions.ld
 
+MEMORY {
+	bss_ram : ORIGIN = 0x41800000, LENGTH = 0xF0000
+}
+
 SECTIONS
 {
 	.text :
@@ -79,7 +83,7 @@ SECTIONS
 		. = ALIGN(8);
 		_ebss = .;
 		_end = .;
-	} > sram
+	} > bss_ram
 
 	/DISCARD/ :
 	{
