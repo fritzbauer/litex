@@ -761,28 +761,20 @@ printf("sdcardboot_from_json\n");
 */
 static void __attribute__ ((noinline)) sdcardboot_from_json(const char * filename)
 {
-	#if SRAM_SIZE < 14096
+	/* FIXME: modify/increase if too limiting */
+	#define SDCARDBOOT_FROM_JSON_BUFFER_SIZE 1024
+	#define SDCARDBOOT_FROM_JSON_JSON_TOKENS 32
+	#if SRAM_SIZE < 4096
 	    // We need to ensure that the following variables are not needed anymore once copy_file_from_sdcard_to_ram
 	    // is called.
-        FATFS *fs = (FATFS*)(MAIN_RAM_BASE); //malloc(sizeof(FATFS));
-        /*FIL *file = (FIL*)(((uint32_t)fs) + sizeof(FATFS));
-        char *json_name = (char*)(file + sizeof(FIL) );
-        char *json_value = (char*)(((uint32_t)json_name) + 32 * sizeof(char));
-        jsmn_parser *p = (jsmn_parser*)(((uint32_t)json_value)  + 32 * sizeof(char));
-        jsmntok_t *t = (jsmntok_t*)(p + sizeof(jsmn_parser));*/
-        FIL *file = (FIL*)(fs + 1);
+        FATFS *fs = (FATFS*)(MAIN_RAM_BASE); //this is some manual malloc
+        FILINFO *fileinfo = (FIL*)(fs + 1);
+        FIL *file = (FILINFO*)(fileinfo + 1);
         char *json_name = (char*)(file + 1);
         char *json_value = (char*)(json_name + 32);
         jsmn_parser *p = (jsmn_parser*)(json_value  + 32);
         jsmntok_t *t = (jsmntok_t*)(p + 1);
-        /* FIXME: modify/increase if too limiting */
-        char *json_buffer = (char*)(t + 32);
-        memset(json_buffer,   0, 1025);
-        memset(fs,   0, ((uint32_t)json_buffer-(uint32_t)fs));
-	    printf("Length: %d\n", ((uint32_t)json_buffer-(uint32_t)fs));
-        printf("Pointers:\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n\t%p\n", fs, file, json_name, json_value, p, t, json_buffer);
-	    printf("Sizes:\n\tfs: %d\n\t%d\n\t%d\n\t%d\n\t%d\n", sizeof(FATFS), sizeof(FIL), sizeof(char), sizeof(jsmn_parser), sizeof(jsmntok_t));
-        //return;
+        char *json_buffer = (char*)(t + SDCARDBOOT_FROM_JSON_JSON_TOKENS);
     #else
         FATFS fs_o;
         FIL file_o;
@@ -825,36 +817,39 @@ static void __attribute__ ((noinline)) sdcardboot_from_json(const char * filenam
 	    printf("Failed to mount: %d\n", fr);
 		return;
 	}
+
 	fr = f_open(file, filename, FA_READ);
 	if (fr != FR_OK) {
-		printf("%s file not found: %d\n", filename, fr);
+		printf("'%s' file not found: %d\n", filename, fr);
 		f_mount(0, "", 0);
 		return;
 	}
 
-	fr = f_read(file, json_buffer, 1024, (UINT *) &length);
-	printf(json_buffer);
+	FSIZE_t filesize = f_size(file);;
+
+	#if SRAM_SIZE < 4096
+	    printf("Setting %d\n", ((uint32_t)(json_buffer + filesize + 1) - (uint32_t)fs));
+        memset(fs, 0, ((uint32_t)(json_buffer + filesize + 1) - (uint32_t)fs));
+        //memset(json_buffer, 0, filesize);
+    #endif
+
+
+	fr = f_read(file, json_buffer, filesize, (UINT *) &length);
+	printf("Found boot.json:\n%s\n", json_buffer);
 
 	/* Close JSON file */
 	f_close(file);
 	f_mount(0, "", 0);
 
 	/* Parse JSON file */
-	//jsmn_parser p;
-	print_bytes(p, sizeof(jsmn_parser));
-
 	jsmn_init(p);
 
-	print_bytes(&bootfiles, 5 * sizeof(BootFile));
-
 	count = jsmn_parse(p, json_buffer, strlen(json_buffer), t, 32);
-	printf("Count: %d\n", count);
 	for (i=0; i<count-1; i++) {
 		memset(json_name,   0, sizeof(json_name));
 		memset(json_value,  0, sizeof(json_value));
 		/* Elements are JSON strings with 1 children */
 		if ((t[i].type == JSMN_STRING) && (t[i].size == 1)) {
-		    printf("Found JSMN_STRING\n");
 			/* Get Element's filename */
 			memcpy(json_name, json_buffer + t[i].start, t[i].end - t[i].start);
 			/* Get Element's address */
@@ -882,12 +877,8 @@ static void __attribute__ ((noinline)) sdcardboot_from_json(const char * filenam
 				boot_r3 = strtoul(json_value, NULL, 0);
 			/* Copy Image from SDCard to address */
 			} else {
-				printf("Image found '%s'\n", json_name);
-	            usleep(10000);
-
 				strncpy(bootfiles[bootfile_count].file_name, json_name, 32);
 				bootfiles[bootfile_count].address = strtoul(json_value, NULL, 0);
-				printf("Copied string: '%s'\n", bootfiles[bootfile_count].file_name);
 				bootfile_count++;
 
 				image_found = 1;
@@ -898,17 +889,6 @@ static void __attribute__ ((noinline)) sdcardboot_from_json(const char * filenam
 		}
 	}
 
-    printf("Bootfiles after:\n");
-    print_bytes(&bootfiles, 5 * sizeof(BootFile));
-	printf("Bootfile_count %d\n", bootfile_count);
-	for(uint8_t j = 0; j < bootfile_count; j++) {
-	    printf("In array: %s\n", bootfiles[j].file_name);
-	}
-
-    printf("sleeping2\n");
-	//usleep(300000000);
-	usleep(8000);
-    printf("done2\n");
 	#if SRAM_SIZE < 4096
 	/*    free(fr);
 	    free(fs);
@@ -917,16 +897,12 @@ static void __attribute__ ((noinline)) sdcardboot_from_json(const char * filenam
 	#endif
 
 	for(uint8_t i = 0; i < bootfile_count; i++) {
-	    printf("Copying %s; %lu bytes\n", bootfiles[i].file_name, bootfiles[i].address);
 	    result = copy_file_from_sdcard_to_ram(bootfiles[i].file_name, bootfiles[i].address);
         if (result == 0) {
-            printf("Failed to copy file to sdcard.\n");
-            printf("File: %s\n", bootfiles[i].file_name);
+            printf("Failed to copy file '%s' to sdcard.\n", bootfiles[i].file_name);
             return;
         }
 	}
-
-	printf("Booting\n");
 
 	/* Boot */
 	if (image_found) {
