@@ -3,8 +3,9 @@ ENTRY(_start)
 
 INCLUDE generated/regions.ld
 
+
 MEMORY {
-	bss_ram : ORIGIN = 0x41800000, LENGTH = 0xF0000
+	sram_fake : ORIGIN = 0x41800000, LENGTH = 0xF0000
 }
 
 SECTIONS
@@ -68,7 +69,7 @@ SECTIONS
 		FILL(0);
 		. = ALIGN(8);
 		_edata = .;
-	} > bss_ram AT > rom
+	} > sram_fake AT > rom
 
 	.bss :
 	{
@@ -83,7 +84,7 @@ SECTIONS
 		. = ALIGN(8);
 		_ebss = .;
 		_end = .;
-	} > bss_ram
+	} > sram_fake
 
 	/DISCARD/ :
 	{
