@@ -219,11 +219,11 @@ uint8_t spisdcard_init(void) {
     /* Set SPI clk freq to initialization frequency */
     spi_set_clk_freq(SPISDCARD_CLK_FREQ_INIT);
 
-    timeout = 2000;
+    timeout = 1000;
     while (timeout) {
         /* Set SDCard in SPI Mode (generate 80 dummy clocks) */
         spisdcard_cs_write(SPI_CS_HIGH);
-        for (i=0; i<20; i++)
+        for (i=0; i<10; i++)
             spi_xfer(0xff);
         spisdcard_cs_write(SPI_CS_LOW);
 
@@ -245,7 +245,7 @@ uint8_t spisdcard_init(void) {
     spisdcardread_bytes(buf, 4); /* Get additional bytes of R7 response */
 
     /* Set SDCard in Operational state (1s timeout) */
-    timeout = 2000;
+    timeout = 1000;
     while (timeout > 0) {
         if (spisdcardsend_cmd(ACMD41, 1 << 30) == 0)
             break;
