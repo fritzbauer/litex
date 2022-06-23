@@ -173,7 +173,7 @@ static uint8_t spisdcardsend_cmd(uint8_t cmd, uint32_t arg)
     }
 
     /* Select the card and wait for it, except for CMD12: STOP_TRANSMISSION */
-    if (cmd != CMD12) {
+    if (cmd != CMD12 && cmd != CMD0){//} && cmd != CMD8) {
         spisdcard_deselect();
         if (spisdcard_select() == 0)
             return 0xff;
@@ -219,11 +219,11 @@ uint8_t spisdcard_init(void) {
     /* Set SPI clk freq to initialization frequency */
     spi_set_clk_freq(SPISDCARD_CLK_FREQ_INIT);
 
-    timeout = 1000;
+    timeout = 2000;
     while (timeout) {
         /* Set SDCard in SPI Mode (generate 80 dummy clocks) */
         spisdcard_cs_write(SPI_CS_HIGH);
-        for (i=0; i<10; i++)
+        for (i=0; i<20; i++)
             spi_xfer(0xff);
         spisdcard_cs_write(SPI_CS_LOW);
 
@@ -233,24 +233,29 @@ uint8_t spisdcard_init(void) {
 
         timeout--;
     }
-    if (timeout == 0)
+    if (timeout == 0) {
+        printf("Timeout when initializing card CMD5\n");
         return 0;
-
+    }
     /* Set SDCard voltages, only supported by ver2.00+ SDCards */
-    if (spisdcardsend_cmd(CMD8, 0x1AA) != 0x1)
+    if (spisdcardsend_cmd(CMD8, 0x1AA) != 0x1) {
+        printf("Error when initializing card CMD8\n");
         return 0;
+    }
     spisdcardread_bytes(buf, 4); /* Get additional bytes of R7 response */
 
     /* Set SDCard in Operational state (1s timeout) */
-    timeout = 1000;
+    timeout = 2000;
     while (timeout > 0) {
         if (spisdcardsend_cmd(ACMD41, 1 << 30) == 0)
             break;
         busy_wait(1);
         timeout--;
     }
-    if (timeout == 0)
+    if (timeout == 0) {
+        printf("Timeout when initializing card ACMD41\n");
         return 0;
+    }
 
     /* Set SPI clk freq to operational frequency */
     spi_set_clk_freq(SPISDCARD_CLK_FREQ);
