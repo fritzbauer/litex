@@ -713,50 +713,89 @@ static int copy_file_from_sdcard_to_ram(const char * filename, unsigned long ram
 
 static void sdcardboot_from_json(const char * filename)
 {
-	FRESULT fr;
-	FATFS fs;
-	FIL file;
+	/* FIXME: modify/increase if too limiting */
+	#define SDCARDBOOT_FROM_JSON_TOKEN_COUNT 32
+	#define SDCARDBOOT_FROM_JSON_MAX_FILE_COUNT 5
+	#if SRAM_SIZE < 8192
+	    // We need to ensure that the following variables are not needed anymore once copy_file_from_sdcard_to_ram
+	    // is called.
+        FATFS *fs = (FATFS*)(MAIN_RAM_BASE); //this is some manual malloc
+        FILINFO *fileinfo = (FIL*)(fs + 1);
+        FIL *file = (FILINFO*)(fileinfo + 1);
+        char *json_name = (char*)(file + 1);
+        char *json_value = (char*)(json_name + 32);
+        jsmn_parser *p = (jsmn_parser*)(json_value  + 32);
+        jsmntok_t *t = (jsmntok_t*)(p + 1);
+        char *json_buffer = (char*)(t + SDCARDBOOT_FROM_JSON_TOKEN_COUNT);
+        memset(fs, 0, ((uint32_t)json_buffer - (uint32_t)fs));
+    #else
+        FATFS fs_o;
+        FIL file_o;
+        jsmn_parser p_o;
+
+        FATFS *fs = &fs_o;
+        FIL *file = &file_o;
+        jsmn_parser *p = &p_o;
+
+        /* FIXME: modify/increase if too limiting */
+        char json_buffer[1024];
+        char json_name[32];
+        char json_value[32];
+        jsmntok_t t[SDCARDBOOT_FROM_JSON_TOKEN_COUNT];
+
+    #endif
+
+    FRESULT fr;
 
 	uint8_t i;
 	uint8_t count;
 	uint32_t length;
 	uint32_t result;
 
-	/* FIXME: modify/increase if too limiting */
-	char json_buffer[1024];
-	char json_name[32];
-	char json_value[32];
-
 	unsigned long boot_r1 = 0;
 	unsigned long boot_r2 = 0;
 	unsigned long boot_r3 = 0;
 	unsigned long boot_addr = 0;
 
+    /* FIXME: modify/increase if too limiting */
+	BootFile bootfiles[SDCARDBOOT_FROM_JSON_MAX_FILE_COUNT];
+	uint8_t bootfile_count = 0;
+
 	uint8_t image_found = 0;
 	uint8_t boot_addr_found = 0;
 
 	/* Read JSON file */
-	fr = f_mount(&fs, "", 1);
-	if (fr != FR_OK)
-		return;
-	fr = f_open(&file, filename, FA_READ);
+	fr = f_mount(fs, "", 1);
 	if (fr != FR_OK) {
-		printf("%s file not found.\n", filename);
+	    printf("Failed to mount: %d\n", fr);
+		return;
+	}
+
+	fr = f_open(file, filename, FA_READ);
+	if (fr != FR_OK) {
+		printf("'%s' file not found: %d\n", filename, fr);
 		f_mount(0, "", 0);
 		return;
 	}
 
-	fr = f_read(&file, json_buffer, sizeof(json_buffer), (UINT *) &length);
+	FSIZE_t filesize = f_size(file);;
+
+	#if SRAM_SIZE < 8192
+	    printf("Setting %d\n", ((uint32_t)(json_buffer + filesize + 1) - (uint32_t)fs));
+        memset(json_buffer, 0, filesize + 1);
+    #endif
+
+	fr = f_read(file, json_buffer, filesize, (UINT *) &length);
+	printf("Found boot.json (%lu bytes):\n%s\n", filesize, json_buffer);
 
 	/* Close JSON file */
-	f_close(&file);
+	f_close(file);
 	f_mount(0, "", 0);
 
 	/* Parse JSON file */
-	jsmntok_t t[32];
-	jsmn_parser p;
-	jsmn_init(&p);
-	count = jsmn_parse(&p, json_buffer, strlen(json_buffer), t, sizeof(t)/sizeof(*t));
+	jsmn_init(p);
+
+	count = jsmn_parse(p, json_buffer, strlen(json_buffer), t, SDCARDBOOT_FROM_JSON_TOKEN_COUNT);
 	for (i=0; i<count-1; i++) {
 		memset(json_name,   0, sizeof(json_name));
 		memset(json_value,  0, sizeof(json_value));
@@ -789,19 +828,33 @@ static void sdcardboot_from_json(const char * filename)
 				boot_r3 = strtoul(json_value, NULL, 0);
 			/* Copy Image from SDCard to address */
 			} else {
-				result = copy_file_from_sdcard_to_ram(json_name, strtoul(json_value, NULL, 0));
-				if (result == 0)
-					return;
+				strncpy(bootfiles[bootfile_count].file_name, json_name, 32);
+				bootfiles[bootfile_count].address = strtoul(json_value, NULL, 0);
+				bootfile_count++;
+
 				image_found = 1;
-				if (boot_addr_found == 0) /* Boot to last Image address if no bootargs.addr specified */
+				if (boot_addr_found == 0) {/* Boot to last Image address if no bootargs.addr specified */
 					boot_addr = strtoul(json_value, NULL, 0);
+				}
 			}
 		}
 	}
 
+	for(uint8_t i = 0; i < bootfile_count; i++) {
+	    result = copy_file_from_sdcard_to_ram(bootfiles[i].file_name, bootfiles[i].address);
+        if (result == 0) {
+            printf("Failed to copy file '%s' to sdcard.\n", bootfiles[i].file_name);
+            return;
+        }
+	}
+
 	/* Boot */
-	if (image_found)
+	if (image_found) {
 		boot(boot_r1, boot_r2, boot_r3, boot_addr);
+	}
+
+    printf("No image found\n");
+    return;
 }
 
 #ifdef MAIN_RAM_BASE
