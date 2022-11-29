@@ -22,7 +22,7 @@ class I2S_FORMAT(Enum):
     I2S_LEFT_JUSTIFIED = 2
 
 class S7I2S(Module, AutoCSR, AutoDoc):
-    def __init__(self, pads, fifo_depth=256, controller=False, master=False, concatenate_channels=True, sample_width=16, frame_format=I2S_FORMAT.I2S_LEFT_JUSTIFIED, lrck_ref_freq=100e6, lrck_freq=44100, bits_per_channel=28, document_interrupts=False, toolchain="vivado"):
+    def __init__(self, pads, sys_clk_freq, fifo_depth=256, controller=False, master=False, concatenate_channels=True, sample_width=16, frame_format=I2S_FORMAT.I2S_LEFT_JUSTIFIED, lrck_ref_freq=100e6, lrck_freq=44100, bits_per_channel=28, document_interrupts=False, toolchain="vivado"):
         if master == True:
             print("Master/slave terminology deprecated, please use controller/peripheral. Please see http://oshwa.org/a-resolution-to-redefine-spi-signal-names.")
             controller = True
@@ -251,8 +251,9 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                 )
             ]
 
-            self.submodules.rx_fifo = fifo = FIFOSyncMacro("18Kb", data_width=fifo_data_width,
+            self.submodules.rx_fifo = rx_fifo = FIFOSyncMacro("18Kb", data_width=fifo_data_width,
                 almost_empty_offset=8, almost_full_offset=(512 - fifo_depth), toolchain=toolchain)
+            fifo = rx_fifo
             self.comb += fifo.reset.eq(rx_reset)
 
             self.comb += [  # Wire up the status signals and interrupts
@@ -293,8 +294,11 @@ class S7I2S(Module, AutoCSR, AutoDoc):
             rx_delay_cnt = Signal()
             rx_delay_val = 1 if frame_format == I2S_FORMAT.I2S_STANDARD else 0
 
+            rx_fsm = Signal(5)
+
             self.submodules.rxi2s = rxi2s = FSM(reset_state="IDLE")
             rxi2s.act("IDLE",
+                NextValue(rx_fsm, 1),
                 NextValue(fifo.wr_d, 0),
                 If(self.rx_ctl.fields.enable,
                     # Wait_sync guarantees we start at the beginning of a left frame, and not in
@@ -306,6 +310,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                 )
             ),
             rxi2s.act("WAIT_SYNC",
+                NextValue(rx_fsm, 2),
                 If(rising_edge & (~sync_pin if frame_format == I2S_FORMAT.I2S_STANDARD else sync_pin),
                     If(rx_delay_cnt > 0,
                         NextValue(rx_delay_cnt, rx_delay_cnt - 1),
@@ -318,6 +323,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                 ),
             )
             rxi2s.act("LEFT",
+                NextValue(rx_fsm, 3),
                 If(~self.rx_ctl.fields.enable,
                     NextState("IDLE")
                 ).Else(
@@ -328,6 +334,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
             )
             if concatenate_channels:
                 rxi2s.act("LEFT_WAIT",
+                    NextValue(rx_fsm, 4),
                     If(~self.rx_ctl.fields.enable,
                         NextState("IDLE")
                     ).Else(
@@ -353,6 +360,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                 )
             else:
                 rxi2s.act("LEFT_WAIT",
+                    NextValue(rx_fsm, 5),
                     If(~self.rx_ctl.fields.enable,
                         NextState("IDLE")
                     ).Else(
@@ -379,6 +387,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                 )
 
             rxi2s.act("RIGHT",
+                NextValue(rx_fsm, 6),
                 If(~self.rx_ctl.fields.enable,
                     NextState("IDLE")
                 ).Else(
@@ -388,6 +397,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                 )
             )
             rxi2s.act("RIGHT_WAIT",
+                NextValue(rx_fsm, 7),
                 If(~self.rx_ctl.fields.enable,
                     NextState("IDLE")
                 ).Else(
@@ -534,7 +544,7 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                     ).Else(
                         If(rising_edge,
                             If((tx_cnt == 0),
-                                If((sync_pin if frame_format == I2S_FORMAT.I2S_STANDARD else ~sync_pin),
+                                If((c if frame_format == I2S_FORMAT.I2S_STANDARD else ~sync_pin),
                                     NextValue(tx_cnt, sample_width),
                                     NextState("RIGHT"),
                                 ).Else(
@@ -599,3 +609,26 @@ class S7I2S(Module, AutoCSR, AutoDoc):
                     )
                 )
             )
+
+        #self.analyzer_signals = [
+        #   # IBus (could also just added as self.cpu.ibus)
+        #   rx_fifo.rd_d,
+        #   rx_cnt,
+        #   tx_cnt,
+        #   txi2s,
+        #   sync_pin,
+        #   clk_pin,
+        #   pads.tx,
+        #   pads.rx,            
+        #   rx_fsm,
+        #   self.rx_ctl.fields.enable
+        #
+
+        
+        #from litescope import LiteScopeAnalyzer
+        #self.submodules.analyzer = analyzer = LiteScopeAnalyzer(analyzer_signals,
+        #    depth        = 512,
+        #    clock_domain = "sys",
+        #    samplerate   = sys_clk_freq,
+        #    csr_csv      = "analyzer.csv"
+        #)

@@ -19,6 +19,7 @@ from migen import *
 from litex.gen import colorer
 from litex.gen import LiteXModule
 from litex.gen.fhdl.hierarchy import LiteXHierarchyExplorer
+from litex.build.generic_platform import Subsignal
 
 from litex.compat.soc_core import *
 
@@ -1426,6 +1427,71 @@ class LiteXSoC(SoC):
         self.uartbone_phy = uart.UARTPHY(self.platform.request(name), clk_freq, baudrate)
         self.uartbone = uart.UARTBone(phy=self.uartbone_phy, clk_freq=clk_freq, cd=cd)
         self.bus.add_master(name="uartbone", master=self.uartbone.wishbone)
+
+    #def add_i2s(self, name="i2s"):
+#
+ #       from litex.soc.cores.i2s import S7I2S
+  #  
+   #     #self.check_if_exists(name)
+    #    self.i2s = S7I2S(pads=self.platform.request("i2s"), fifo_depth=128, sample_width=24, toolchain=self.platform.toolchain)
+     #   self.bus.add_slave(name=name, slave=self.i2s.bus)
+    # https://github.com/betrusted-io/betrusted-soc/blob/70190e2049393d3823bad5cdc93164f3dc44ffb5/betrusted_soc.py#L1598
+    # https://github.com/litex-hub/zephyr-on-litex-vexriscv/blob/5b125d0b51db26545ee0d4aa62120bf74c0370d5/soc_zephyr.py#L93
+    def add_i2s_peripheral(self, name="i2s", sys_clk_freq=None, toolchain=None):
+        from litex.soc.cores.i2s import S7I2S, I2S_FORMAT
+        
+        i2s_mem_size = 0x40000
+        mem_rx_origin = 0xb1000000
+        mem_tx_origin = 0xb2000000
+
+        # i2s rx
+        self.submodules.i2s_rx = i2s_rx = S7I2S(
+            pads=self.platform.request("i2s_rx"),
+            sys_clk_freq=sys_clk_freq,
+            sample_width=24,
+            frame_format=I2S_FORMAT.I2S_STANDARD,
+            lrck_freq=48000,
+            concatenate_channels=False,
+            toolchain=toolchain
+        )
+        self.bus.add_slave("i2s_rx", self.i2s_rx.bus, SoCRegion(origin=mem_rx_origin, size=i2s_mem_size, cached=False))
+    
+        #
+        #self.add_csr("i2s_rx", use_loc_if_exists=True)
+        #self.irq.add("i2s_rx", use_loc_if_exists=True)
+
+        # i2s tx
+        self.submodules.i2s_tx = i2s_tx = S7I2S(
+            pads=self.platform.request("i2s_tx"),
+            sys_clk_freq=sys_clk_freq,
+            sample_width=24,
+            frame_format=I2S_FORMAT.I2S_STANDARD,
+            lrck_freq=48000,
+            concatenate_channels=False,
+            toolchain=toolchain
+        )
+        self.bus.add_slave("i2s_tx", self.i2s_tx.bus, SoCRegion(origin=mem_tx_origin, size=i2s_mem_size, cached=False))
+
+        
+        #from litescope import LiteScopeAnalyzer
+        #self.submodules.analyzer = analyzer = LiteScopeAnalyzer(i2s_rx.analyzer_signals,
+        #    depth        = 1024,
+        #    clock_domain = "scope", #slow
+        #    samplerate   = 20e6,
+        #    csr_csv      = "analyzer.csv"
+        #)
+        #self.add_csr("analyzer")
+
+        #self.add_memory_region("i2s", 0xb1000000, i2s_mem_size, type="io")
+        #self.add_wb_slave(self.mem_regions["i2s"].origin, self.i2s.bus, i2s_mem_size)
+        #self.add_interrupt("i2s")
+
+        
+        #self.bus.add_slave(name="i2s", slave=self.i2s.bus)
+        
+        
+        #self.comb += self.platform.request("i2s_rx_mclk").eq(self.cd_mmcm_clkout["i2s_rx"].clk)
+
 
     # Add JTAGbone ---------------------------------------------------------------------------------
     def add_jtagbone(self, name="jtagbone", chain=1):
