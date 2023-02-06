@@ -1440,13 +1440,11 @@ class LiteXSoC(SoC):
     def add_i2s_peripheral(self, name="i2s", sys_clk_freq=None, toolchain=None):
         from litex.soc.cores.i2s import S7I2S, I2S_FORMAT
         
-        i2s_mem_size = 0x40000
-        mem_rx_origin = 0xb1000000
-        mem_tx_origin = 0xb2000000
+        i2s_mem_size = 0x40000 * 2
+        mem_origin = 0xb1000000
 
-        # i2s rx
-        self.submodules.i2s_rx = i2s_rx = S7I2S(
-            pads=self.platform.request("i2s_rx"),
+        self.submodules.i2s = i2s = S7I2S(
+            pads=self.platform.request("i2s"),
             sys_clk_freq=sys_clk_freq,
             sample_width=24,
             frame_format=I2S_FORMAT.I2S_STANDARD,
@@ -1454,25 +1452,13 @@ class LiteXSoC(SoC):
             concatenate_channels=False,
             toolchain=toolchain
         )
-        self.bus.add_slave("i2s_rx", self.i2s_rx.bus, SoCRegion(origin=mem_rx_origin, size=i2s_mem_size, cached=False))
+        self.bus.add_slave("i2s", self.i2s.bus, SoCRegion(origin=mem_origin, size=i2s_mem_size, cached=False))
     
         #
         #self.add_csr("i2s_rx", use_loc_if_exists=True)
         #self.irq.add("i2s_rx", use_loc_if_exists=True)
 
-        # i2s tx
-        self.submodules.i2s_tx = i2s_tx = S7I2S(
-            pads=self.platform.request("i2s_tx"),
-            sys_clk_freq=sys_clk_freq,
-            sample_width=24,
-            frame_format=I2S_FORMAT.I2S_STANDARD,
-            lrck_freq=48000,
-            concatenate_channels=False,
-            toolchain=toolchain
-        )
-        self.bus.add_slave("i2s_tx", self.i2s_tx.bus, SoCRegion(origin=mem_tx_origin, size=i2s_mem_size, cached=False))
-
-        
+      
         #from litescope import LiteScopeAnalyzer
         #self.submodules.analyzer = analyzer = LiteScopeAnalyzer(i2s_rx.analyzer_signals,
         #    depth        = 1024,
