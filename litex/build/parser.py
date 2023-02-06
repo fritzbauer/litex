@@ -32,6 +32,9 @@ class LiteXArgumentParser(argparse.ArgumentParser):
         toolchain used at build time
     _default_toolchain: str
         toolchain to use by default or when no selection is done  by the user
+    _args_default: dict
+        couple argument name / default value to apply just before to call
+        parse_args()
     """
     def __init__(self, platform=None, **kwargs):
         """
@@ -55,6 +58,7 @@ class LiteXArgumentParser(argparse.ArgumentParser):
         self._toolchain         = None
         self._target_group      = None
         self._logging_group     = None
+        self._args_default      = {}
         if platform is not None:
             self.set_platform(platform)
             self.add_target_group()
@@ -111,6 +115,18 @@ class LiteXArgumentParser(argparse.ArgumentParser):
         self._logging_group.add_argument("--log-filename", default=None,   help="Logging filename.")
         self._logging_group.add_argument("--log-level",    default="info", help="Logging level: debug, info (default), warning error or critical.")
 
+    def set_defaults(self, **kwargs):
+        """
+        Overrides argparse.ArgumentParser.set_defaults. Used to delay default
+        values application
+
+        Parameters
+        ==========
+        kwargs: dict
+            couple argument name / default value
+        """
+        self._args_default.update(kwargs)
+
     @property
     def builder_argdict(self):
         """
@@ -158,8 +174,17 @@ class LiteXArgumentParser(argparse.ArgumentParser):
         # When platform is None try to search for a user input
         if self._platform is None:
             platform = self.get_value_from_key("--platform", None)
+            if platform is None: # no user selection: try default
+                platform = self.get_default_value_from_actions("platform", None)
             if platform is not None:
-                self.set_platform(importlib.import_module(platform).Platform)
+                try:
+                    platform_cls = importlib.import_module(platform).Platform
+                except ModuleNotFoundError as e:
+                    # platform not found: try litex-boards package
+                    platform = "litex_boards.platforms." + platform
+                    platform_cls = importlib.import_module(platform).Platform
+                self.set_platform(platform_cls)
+
                 self.add_target_group()
 
         # When platform provided/set, set builder/soc_core args.
@@ -177,6 +202,10 @@ class LiteXArgumentParser(argparse.ArgumentParser):
         cpu_cls = cpu.CPUS.get(self.get_value_from_key("--cpu-type"), None)
         if cpu_cls is not None and hasattr(cpu_cls, "args_fill"):
             cpu_cls.args_fill(self)
+
+        # Injects arguments default values
+        if len(self._args_default):
+            argparse.ArgumentParser.set_defaults(self, **self._args_default)
 
         # Parse args.
         self._args = argparse.ArgumentParser.parse_args(self, args, namespace)
@@ -224,3 +253,23 @@ class LiteXArgumentParser(argparse.ArgumentParser):
         except IndexError:
             value = default
         return value
+
+    def get_default_value_from_actions(self, key, default=None):
+        """
+        search key into ArgumentParser _actions list
+
+        Parameters
+        ==========
+        key: str
+            key to search
+        default: str
+            default value when key is not in _actions list
+
+        Return
+        ======
+            default value or default when key is not present
+        """
+        for act in self._actions:
+            if act.dest == key:
+                return act.default
+        return default

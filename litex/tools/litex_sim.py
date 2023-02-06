@@ -138,6 +138,7 @@ class Platform(SimPlatform):
 class SimSoC(SoCCore):
     def __init__(self,
         with_sdram            = False,
+        with_sdram_bist       = False,
         with_ethernet         = False,
         ethernet_phy_model    = "sim",
         with_etherbone        = False,
@@ -195,7 +196,8 @@ class SimSoC(SoCCore):
                 module                  = sdram_module,
                 l2_cache_size           = kwargs.get("l2_size", 8192),
                 l2_cache_min_data_width = kwargs.get("min_l2_data_width", 128),
-                l2_cache_reverse        = False
+                l2_cache_reverse        = False,
+                with_bist               = with_sdram_bist
             )
             if sdram_init != []:
                 # Skip SDRAM test to avoid corrupting pre-initialized contents.
@@ -368,6 +370,7 @@ def sim_args(parser):
 
     # DRAM.
     parser.add_argument("--with-sdram",           action="store_true",     help="Enable SDRAM support.")
+    parser.add_argument("--with-sdram-bist",      action="store_true",     help="Enable SDRAM BIST Generator/Checker modules.")
     parser.add_argument("--sdram-module",         default="MT48LC16M16",   help="Select SDRAM chip.")
     parser.add_argument("--sdram-data-width",     default=32,              help="Set SDRAM chip data width.")
     parser.add_argument("--sdram-init",           default=None,            help="SDRAM init file (.bin or .json).")
@@ -476,6 +479,7 @@ def main():
     # SoC ------------------------------------------------------------------------------------------
     soc = SimSoC(
         with_sdram         = args.with_sdram,
+        with_sdram_bist    = args.with_sdram_bist,
         with_ethernet      = args.with_ethernet,
         ethernet_phy_model = args.ethernet_phy_model,
         with_etherbone     = args.with_etherbone,
@@ -490,7 +494,7 @@ def main():
         **soc_kwargs)
     if ram_boot_address is not None:
         if ram_boot_address == 0:
-            ram_boot_address = ram_boot_offset
+            ram_boot_address = conf_soc.mem_map["main_ram"]
         soc.add_constant("ROM_BOOT_ADDRESS", ram_boot_address)
     if args.with_ethernet:
         for i in range(4):

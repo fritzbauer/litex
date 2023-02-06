@@ -36,17 +36,14 @@ jobs:
       # Install GCC Toolchains
       - name: Install GCC Toolchains
         run: |
-          python3 litex_setup.py --gcc=riscv
-          sudo mkdir /usr/local/riscv
-          sudo cp -r $PWD/../riscv64-*/* /usr/local/riscv
-          python3 litex_setup.py --gcc=openrisc
-          sudo mkdir /usr/local/openrisc
-          sudo cp -r $PWD/../openrisc-*/* /usr/local/openrisc
-          sudo apt install gcc-powerpc64le-linux-gnu binutils-multiarch
+          sudo python3 litex_setup.py --gcc=riscv
+          sudo python3 litex_setup.py --gcc=openrisc
+          sudo python3 litex_setup.py --gcc=powerpc
 
       # Build / Install Verilator
       - name: Build Verilator
         run: |
+          sudo apt-get install help2man
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           git clone https://github.com/verilator/verilator
           cd verilator
@@ -62,6 +59,4 @@ jobs:
       # Test
       - name: Run Tests
         run: |
-          export PATH=/usr/local/riscv/bin:$PATH
-          export PATH=/usr/local/openrisc/bin:$PATH
           python3 setup.py test

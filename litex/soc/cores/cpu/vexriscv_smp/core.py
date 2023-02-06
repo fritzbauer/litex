@@ -7,6 +7,7 @@
 
 import os
 from os import path
+import subprocess
 
 from migen import *
 
@@ -270,8 +271,8 @@ class VexRiscvSMP(CPU):
         gen_args.append(f"--itlb-size={VexRiscvSMP.itlb_size}")
 
         cmd = 'cd {path} && sbt "runMain vexriscv.demo.smp.VexRiscvLitexSmpClusterCmdGen {args}"'.format(path=os.path.join(vdir, "ext", "VexRiscv"), args=" ".join(gen_args))
-        if os.system(cmd) != 0:
-            raise OSError('Failed to run sbt')
+        subprocess.check_call(cmd, shell=True)
+
 
     def __init__(self, platform, variant):
         self.platform         = platform
@@ -487,7 +488,10 @@ class VexRiscvSMP(CPU):
 
         # When no Direct Memory Bus, do memory accesses through Wishbone Peripheral Bus.
         if len(self.memory_buses) == 0:
-            VexRiscvSMP.wishbone_memory = True
+            if VexRiscvSMP.with_fpu and (not VexRiscvSMP.wishbone_memory and not VexRiscvSMP.wishbone_force_32b):
+                raise ValueError("No Direct Memory Bus found, please add --with-wishbone-memory or --wishbone-force-32b to your build command.")
+            else:
+                VexRiscvSMP.wishbone_memory = True
 
         # Generate cluster name.
         VexRiscvSMP.generate_cluster_name()

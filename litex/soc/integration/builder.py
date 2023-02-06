@@ -18,6 +18,8 @@ import subprocess
 import struct
 import shutil
 
+from packaging.version import Version
+
 from litex import get_data_mod
 from litex.gen import colorer
 
@@ -225,7 +227,8 @@ class Builder:
             from litedram.init import get_sdram_phy_c_header
             sdram_contents = get_sdram_phy_c_header(
                 self.soc.sdram.controller.settings.phy,
-                self.soc.sdram.controller.settings.timing)
+                self.soc.sdram.controller.settings.timing,
+                self.soc.sdram.controller.settings.geom)
             write_to_file(os.path.join(self.generated_dir, "sdram_phy.h"), sdram_contents)
 
     def _generate_csr_map(self):
@@ -253,19 +256,17 @@ class Builder:
     def _check_meson(self):
         # Check Meson install/version.
         meson_present   = (shutil.which("meson") is not None)
-        meson_version   = [0, 0, 0]
-        meson_major_min = 0
-        meson_minor_min = 59
+        meson_req = '0.59'
         if meson_present:
-            meson_version = subprocess.check_output(["meson", "-v"]).decode("utf-8").split(".")
-        if (not meson_present):
+            meson_version = subprocess.check_output(["meson", "-v"]).decode("utf-8")
+            if not Version(meson_version) >= Version(meson_req):
+                msg = f"Meson version to old. Found: {meson_version}. Required: {meson_req}.\n"
+                msg += "Try updating with:\n"
+                msg += "- pip3 install -U meson.\n"
+                raise OSError(msg)
+        else:
             msg = "Unable to find valid Meson build system, please install it with:\n"
             msg += "- pip3 install meson.\n"
-            raise OSError(msg)
-        if (int(meson_version[0]) < meson_major_min) or (int(meson_version[1]) < meson_minor_min):
-            msg = f"Meson version to old. Found: {meson_version[0]}.{meson_version[1]}. Required: {meson_major_min}.{meson_minor_min}.\n"
-            msg += "Try updating with:\n"
-            msg += "- pip3 install -U meson.\n"
             raise OSError(msg)
 
     def _prepare_rom_software(self):
